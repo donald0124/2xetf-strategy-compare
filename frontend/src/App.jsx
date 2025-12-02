@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { TrendingUp, Activity, AlertTriangle, RefreshCw, DollarSign, Settings, Calendar, Eye, Lock, Unlock, ArrowUp, ArrowDown } from 'lucide-react';
 
-import staticData from './data.json'; 
+//import staticData from './data.json'; 
 
 // --- UI 小元件 ---
 const NumberControl = ({ label, value, onChange, min, max, step, suffix = "", color = "slate", icon: Icon }) => (
@@ -53,7 +53,11 @@ const ToggleButton = ({ label, active, color, onClick }) => (
 );
 
 export default function BacktestSimulator() {
-  const [rawData] = useState(staticData);
+  // --- 狀態設定 ---
+  // 改回預設為空陣列
+  // const [rawData] = useState(staticData);
+  const [rawData, setRawData] = useState([]); 
+  const [loading, setLoading] = useState(true); // 新增 loading
   const [selectedEtf, setSelectedEtf] = useState("price2x_631");
   const [initialCapital, setInitialCapital] = useState(1000000);
   const [etfPercent, setEtfPercent] = useState(50); 
@@ -74,6 +78,24 @@ export default function BacktestSimulator() {
     etf: false,
     cash: false
   });
+
+
+  // --- 【新增】抓取 Zeabur API ---
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // ★★★ 請把這裡換成你在 Zeabur 拿到的真實網址 ★★★
+        const response = await fetch('https://x2etf-strategy-getprice.zeabur.app/api/history');
+        const data = await response.json();
+        setRawData(data);
+        setLoading(false);
+      } catch (error) {
+        console.error("Error fetching data:", error);
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   // --- 日期邏輯 ---
   useEffect(() => {
@@ -208,6 +230,7 @@ export default function BacktestSimulator() {
     };
   }, [validData, initialCapital, etfPercent, isSymmetric, symmetricRange, upperRange, lowerRange, selectedEtf, interestRate]);
 
+  if (loading) return <div className="min-h-screen flex items-center justify-center font-bold text-xl text-slate-500">正在從雲端載入最新股價...</div>;
   if (!results) return <div className="p-10 text-center">請選擇有效日期範圍或確認數據...</div>;
 
   return (
@@ -220,7 +243,7 @@ export default function BacktestSimulator() {
             <div>
               <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
                 <Settings className="text-blue-600" />
-                台股槓桿 ETF 真實回測
+                台股正2ETF 配置策略真實回測
               </h1>
               <p className="text-slate-500 text-xs mt-1">
                 資料區間: {validData[0]?.date} ~ {validData[validData.length-1]?.date} (共 {validData.length} 交易日)
