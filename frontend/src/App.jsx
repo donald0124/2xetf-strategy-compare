@@ -2,8 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { TrendingUp, Activity, AlertTriangle, RefreshCw, DollarSign, Settings, Calendar, Eye, Lock, Unlock, ArrowUp, ArrowDown } from 'lucide-react';
 
-//import staticData from './data.json'; 
-
 // --- UI 小元件 ---
 const NumberControl = ({ label, value, onChange, min, max, step, suffix = "", color = "slate", icon: Icon }) => (
   <div className="mb-4">
@@ -27,12 +25,12 @@ const StatCard = ({ title, value, benchmarkValue, subtext, benchmarkSubtext, ico
     <div className="flex-1">
       <p className="text-sm font-medium text-slate-500">{title}</p>
       <h3 className="text-2xl font-bold text-slate-900">{value}</h3>
-      {subtext && <p className="text-xs text-slate-400 mt-1">{subtext}</p>}
       {benchmarkValue && (
         <p className="text-xs text-slate-400 mt-1 font-medium">
           (0050: <span className="text-slate-600">{benchmarkValue}</span>)
         </p>
       )}
+      {subtext && <p className="text-xs text-slate-400 mt-1">{subtext}</p>}
       {benchmarkSubtext && <p className="text-xs text-slate-400 mt-0">{benchmarkSubtext}</p>}
     </div>
   </div>
@@ -52,39 +50,56 @@ const ToggleButton = ({ label, active, color, onClick }) => (
   </button>
 );
 
+// --- 自定義 Hook: 自動同步 LocalStorage ---
+function useStickyState(defaultValue, key) {
+  const [value, setValue] = useState(() => {
+    try {
+      const stickyValue = window.localStorage.getItem(key);
+      return stickyValue !== null ? JSON.parse(stickyValue) : defaultValue;
+    } catch (error) {
+      return defaultValue;
+    }
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  }, [key, value]);
+
+  return [value, setValue];
+}
+
 export default function BacktestSimulator() {
   // --- 狀態設定 ---
-  // 改回預設為空陣列
-  // const [rawData] = useState(staticData);
   const [rawData, setRawData] = useState([]); 
-  const [loading, setLoading] = useState(true); // 新增 loading
-  const [selectedEtf, setSelectedEtf] = useState("price2x_631");
-  const [initialCapital, setInitialCapital] = useState(1000000);
-  const [etfPercent, setEtfPercent] = useState(50); 
-  
-  // 【新增】波動容忍設定
-  const [isSymmetric, setIsSymmetric] = useState(true); // 是否對稱
-  const [symmetricRange, setSymmetricRange] = useState(20); // 對稱時的數值
-  const [upperRange, setUpperRange] = useState(20); // 上漲容忍 (賣出)
-  const [lowerRange, setLowerRange] = useState(20); // 下跌容忍 (買入)
+  const [loading, setLoading] = useState(true);
 
-  const [interestRate, setInterestRate] = useState(1.0); 
+  // 本金設定 (預設 100萬)
+  const [selectedEtf, setSelectedEtf] = useStickyState("price2x_631", "pref_selectedEtf");
+  const [initialCapital, setInitialCapital] = useStickyState(1000000, "pref_initialCapital");
+  
+  const [etfPercent, setEtfPercent] = useStickyState(50, "pref_etfPercent");
+  
+  const [isSymmetric, setIsSymmetric] = useStickyState(true, "pref_isSymmetric");
+  const [symmetricRange, setSymmetricRange] = useStickyState(20, "pref_symmetricRange");
+  const [upperRange, setUpperRange] = useStickyState(20, "pref_upperRange");
+  const [lowerRange, setLowerRange] = useStickyState(20, "pref_lowerRange");
+
+  const [interestRate, setInterestRate] = useStickyState(1.0, "pref_interestRate");
 
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
-  const [chartVisibility, setChartVisibility] = useState({
+  const [chartVisibility, setChartVisibility] = useStickyState({
     total: true,
     benchmark: true,
     etf: false,
     cash: false
-  });
+  }, "pref_chartVisibility");
 
 
-  // --- 【新增】抓取 Zeabur API ---
+  // --- 抓取 Zeabur API ---
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // ★★★ 請把這裡換成你在 Zeabur 拿到的真實網址 ★★★
         const response = await fetch('https://x2etf-strategy-getprice.zeabur.app/api/history');
         const data = await response.json();
         setRawData(data);
@@ -143,15 +158,12 @@ export default function BacktestSimulator() {
     
     const targetRatio = etfPercent / (100 - etfPercent);
     
-    // 【修改】閾值計算邏輯
     let thresholdBuy, thresholdSell;
     if (isSymmetric) {
         thresholdBuy = targetRatio * (1 - symmetricRange / 100);
         thresholdSell = targetRatio * (1 + symmetricRange / 100);
     } else {
-        // 下跌容忍 lowerRange -> 觸發買入
         thresholdBuy = targetRatio * (1 - lowerRange / 100);
-        // 上漲容忍 upperRange -> 觸發賣出
         thresholdSell = targetRatio * (1 + upperRange / 100);
     }
 
@@ -167,12 +179,10 @@ export default function BacktestSimulator() {
       
       const benchmarkEquity = benchmarkShares * day.price1x;
 
-      // 策略 MDD
       if (totalEquity > maxEquity) maxEquity = totalEquity;
       const drawdown = (totalEquity - maxEquity) / maxEquity;
       if (drawdown < maxDrawdown) maxDrawdown = drawdown;
 
-      // Benchmark MDD
       if (benchmarkEquity > benchMaxEquity) benchMaxEquity = benchmarkEquity;
       const benchDrawdown = (benchmarkEquity - benchMaxEquity) / benchMaxEquity;
       if (benchDrawdown < benchMaxDrawdown) benchMaxDrawdown = benchDrawdown;
@@ -205,7 +215,7 @@ export default function BacktestSimulator() {
         etfValue: Number(etfValue.toFixed(2)),
         cash: Number(cash.toFixed(2)),
         drawdown: drawdown,
-        benchDrawdown: benchDrawdown, // 【新增】
+        benchDrawdown: benchDrawdown,
         action: action
       });
     });
@@ -217,7 +227,6 @@ export default function BacktestSimulator() {
     
     const years = validData.length / 252;
     const cagr = Math.pow(finalEquity / initialCapital, 1 / years) - 1;
-    // 【新增】Benchmark CAGR
     const benchmarkCagr = Math.pow(finalBenchmarkEquity / initialCapital, 1 / years) - 1;
 
     return { 
@@ -288,7 +297,25 @@ export default function BacktestSimulator() {
               <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <DollarSign size={16} /> 資金與配置
               </h2>
+
+              {/* 【新增】初始總本金輸入框 */}
+              <div className="mb-4">
+                <label className="text-sm font-medium text-slate-700 mb-1 block">初始總本金 (TWD)</label>
+                <input 
+                  type="number"
+                  min="0"
+                  step="10000"
+                  value={initialCapital}
+                  onChange={(e) => setInitialCapital(Math.max(0, Number(e.target.value)))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-700"
+                />
+                <div className="text-right text-xs text-slate-400 mt-1">
+                   {initialCapital.toLocaleString()} 元
+                </div>
+              </div>
+
               <NumberControl label="配置重心 (ETF %)" value={etfPercent} onChange={setEtfPercent} min={0} max={100} step={5} suffix="%" color="blue" />
+              
               <div className="pt-2 border-t border-slate-100">
                  <NumberControl label="現金活存利率 (%)" value={interestRate} onChange={setInterestRate} min={0} max={5} step={0.1} suffix="%" color="emerald" />
               </div>
@@ -360,6 +387,7 @@ export default function BacktestSimulator() {
                 title="期末資產" 
                 value={(results.finalEquity / 10000).toFixed(0) + "萬"} 
                 benchmarkValue={(results.finalBenchmarkEquity / 10000).toFixed(0) + "萬"}
+                // 【連動更新】這裡會自動顯示設定的本金 (以萬為單位)
                 subtext={`本金: ${(initialCapital/10000).toFixed(0)}萬`} 
                 icon={DollarSign} 
                 color="green" 
